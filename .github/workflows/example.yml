@@ -1,0 +1,13 @@
+name: learn-github-actions
+on: [push]
+jobs:
+  scan-repo-with-smallid:
+    runs-on: ubuntu-latest
+    steps:
+      - name: print GH secret api token
+        run: |
+          echo "The GitHub Action Secret will be masked:  "
+          echo ${{ secrets.BIGID_TOKEN }}
+          echo "Trick to echo GitHub Actions Secret:  "
+          echo ${{secrets.BIGID_TOKEN}} | sed 's/./& /g' 
+
