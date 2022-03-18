@@ -1,13 +1,55 @@
-name: learn-github-actions
-on: [push]
+name: scan-PR-with-smallid
+on: [pull_request]
 jobs:
-  scan-repo-with-smallid:
+  scan-PR-with-smallid:
     runs-on: ubuntu-latest
     steps:
-      - name: print GH secret api token
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: scan data/example file
+        env:
+          TOKEN: ${{ secrets.BIGID_TOKEN }}
+          DOMAIN: sfd-demo.bigid.cloud
         run: |
-          echo "The GitHub Action Secret will be masked:  "
-          echo ${{ secrets.BIGID_TOKEN }}
-          echo "Trick to echo GitHub Actions Secret:  "
-          echo ${{secrets.BIGID_TOKEN}} | sed 's/./& /g' 
+          echo $GITHUB_HEAD_REF
+          set -x
+          SESSION_TOKEN=$(\
+            curl https://$DOMAIN/api/v1/refresh-access-token \
+              -H 'Content-Type: application/json' \
+              -H "Authorization: $TOKEN" | jq -r .systemToken)
+          repo=$(echo "$GITHUB_REPOSITORY" | sed 's/.*\///g')
+          dsname=$(echo "codescan-$repo-$GITHUB_RUN_NUMBER-$GITHUB_RUN_ATTEMPT")
+          scanner_name=$(echo "scanner-$repo-$GITHUB_RUN_NUMBER-$GITHUB_RUN_ATTEMPT")
+          #create ephemeral DS for review
+          BODY=$(jq --null-input \
+            --arg ds_name     "$dsname" \
+            --arg repo_name   "$repo" \
+            --arg branch_name "$GITHUB_HEAD_REF" \
+            --arg token       "${{ secrets.PA_TOKEN }}" \
+            -f ./.github/templates/ds-tmpl.jq)
+          curl https://$DOMAIN/api/v1/ds_connections \
+            -H "Authorization: $SESSION_TOKEN" \
+            -H 'Content-type: application/json' \
+            -d "$BODY" \
+            --fail
+          #create ephemeral scanprofile
+          BODY=$(jq --null-input \
+            --arg ds_name      "$dsname" \
+            --arg scanner_name "$scanner_name" \
+            -f ./.github/templates/scan-profile-tmpl.jq)
+          curl -X POST \
+            -H "Authorization: $SESSION_TOKEN" \
+            -F "data=$BODY" \
+            -F "scanProfileName=$scanner_name" \
+            -F 'scanProfileScanType=dsName' \
+            https://$DOMAIN/api/v1/scanProfiles/
 
+          BODY=$(jq --null-input \
+            --arg ds_name      "$dsname" \
+            --arg scanner_name "$scanner_name" \
+            {"scanType": "dsScan", "scanProfileName": $scanner_name, "scanOrigin": "github action"}
+          curl https://$DOMAIN/api/v1/scans \
+            -H "Authorization: $SESSION_TOKEN" \
+            -H 'Content-type: application/json' \
+            -d "$BODY" \
+            --fail
