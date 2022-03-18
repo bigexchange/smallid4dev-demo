@@ -4,10 +4,22 @@ jobs:
   scan-repo-with-smallid:
     runs-on: ubuntu-latest
     steps:
-      - name: print GH secret api token
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: scan data/example file
+        env:
+          TOKEN: ${{ secrets.BIGID_TOKEN }}
+          DOMAIN: sfd-demo.bigid.cloud
         run: |
-          echo "The GitHub Action Secret will be masked:  "
-          echo ${{ secrets.BIGID_TOKEN }}
-          echo "Trick to echo GitHub Actions Secret:  "
-          echo ${{secrets.BIGID_TOKEN}} | sed 's/./& /g' 
-
+          set -x
+          SESSION_TOKEN=$(\
+            curl "https://$DOMAIN/api/v1/refresh-access-token" \
+              -H 'Content-Type: application/json' \
+              -H "Authorization: $TOKEN" | jq -r '.systemToken')
+          zip -r archive.zip . -x ./.git/**\*
+          echo "https://$DOMAIN/api/v1/scan-api/analyze"
+          curl -v --fail \
+            --data-binary "@archive.zip" \
+            -H "Authorization: $SESSION_TOKEN" \
+            -H 'Content-type: application/json' \
+            -H "X-BIGID-CHANNEL: $GITHUB_REPOSITORY-$GITHUB_SHA" "https://$DOMAIN/api/v1/scan-api/analyze"
