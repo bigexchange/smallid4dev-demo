@@ -1,13 +1,12 @@
-name: learn-github-actions
+name: smallid 
 on: [push]
 jobs:
-  scan-repo-with-smallid:
+  codescan:
     runs-on: ubuntu-latest
     steps:
-      - name: print GH secret api token
-        run: |
-          echo "The GitHub Action Secret will be masked:  "
-          echo ${{ secrets.BIGID_TOKEN }}
-          echo "Trick to echo GitHub Actions Secret:  "
-          echo ${{secrets.BIGID_TOKEN}} | sed 's/./& /g' 
-
+      - name: codescan 
+        uses: mhebrard-bigid/codescan-bigid-action@v0
+        with:
+          domain: sfd-demo.bigid.cloud
+          bigid_token: ${{ secrets.BIGID_TOKEN }}
+          github_personnal_access_token: ${{ secrets.PA_TOKEN }}
