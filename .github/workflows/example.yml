@@ -1,0 +1,57 @@
+name: smallid 
+on: [push]
+jobs:
+  codescan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: scan data/example file
+        env:
+          TOKEN: ${{ secrets.BIGID_TOKEN }}
+          DOMAIN: sfd-demo.bigid.cloud
+        run: |
+          SESSION_TOKEN=$(\
+            curl "https://$DOMAIN/api/v1/refresh-access-token" \
+              -H 'Content-Type: application/json' \
+              -H "Authorization: $TOKEN" | jq -r .systemToken)
+          repo=$(echo "$GITHUB_REPOSITORY" | sed 's/.*\///g')
+          dsname="codescan-$repo-$GITHUB_RUN_NUMBER-$GITHUB_RUN_ATTEMPT"
+          scanner_name="scanner-$repo-$GITHUB_RUN_NUMBER-$GITHUB_RUN_ATTEMPT"
+          #create ephemeral DS for review
+          BODY=$(jq --null-input \
+            --arg ds_name     "$dsname" \
+            --arg repo_name   "$repo" \
+            --arg branch_name "$GITHUB_HEAD_REF" \
+            --arg token       "***" \
+            -f ./.github/templates/ds-tmpl.jq)
+          curl "https://$DOMAIN/api/v1/ds_connections" \
+            -H "Authorization: $SESSION_TOKEN" \
+            -H 'Content-type: application/json' \
+            -d "$BODY" \
+            --fail
+          #create ephemeral scanprofile
+          BODY=$(jq --null-input \
+            --arg ds_name      "$dsname" \
+            --arg scanner_name "$scanner_name" \
+            -f ./.github/templates/scan-profile-tmpl.jq)
+          echo "create scan profile"
+          curl -X POST \
+            -H "Authorization: $SESSION_TOKEN" \
+            -F "data=$BODY" \
+            -F "scanProfileName=$scanner_name" \
+            -F 'scanProfileScanType=dsName' \
+            "https://$DOMAIN/api/v1/scanProfiles/"
+          echo "launch scan"
+          BODY=$(jq --null-input --arg scanner_name "$scanner_name" \
+            '{"scanType": "dsScan", "scanProfileName": $scanner_name, "scanOrigin": "github action"}')
+          scan_id=$(curl "https://$DOMAIN/api/v1/scans" \
+                      -H "Authorization: $SESSION_TOKEN" \
+                      -H 'Content-type: application/json' \
+                      -d "$BODY" \
+                      --fail | jq -r '.result._id')
+          while [ "$(curl "https://$DOMAIN/api/v1/scans/$scan_id" -H "Authorization: $SESSION_TOKEN" |jq -r '.[0].state')" != "Completed" ]; do echo "waiting for scan"; sleep 2; done
+          echo "scan completed"
+          result=$(curl "https://$DOMAIN/api/v1/scan-insights/$scan_id" -H "Authorization: $SESSION_TOKEN")
+          echo "$result"
+          echo "$result" | jq -r '.scanSummary'
